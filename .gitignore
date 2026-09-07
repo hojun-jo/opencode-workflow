@@ -1,0 +1,20 @@
+## Dependencies (restore with npm install)
+node_modules/
+
+## Local OpenCode and graph-analysis state
+.omo/
+.codegraph
+graphify-out/
+plugins/graphify-out/cache/
+
+## Generated artifacts
+dist/
+build/
+coverage/
+*.log
+
+## Credentials and machine-specific files
+.env
+.env.*
+!.env.example
+.DS_Store

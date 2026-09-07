@@ -1,0 +1,20 @@
+export default {
+  name: "full",
+  description: "High-assurance product design, architecture, traceability, TDD, independent review, and completion workflow.",
+  stages: [
+    { id: "FEATURE_DEFINITION", ponytail: "off" },
+    { id: "USER_FLOW", ponytail: "off" },
+    { id: "OPEN_DESIGN", ponytail: "off" },
+    { id: "PRODUCT_REVIEW", gate: "product_design", ponytail: "off" },
+    { id: "ARCHITECTURE", ponytail: "lite" },
+    { id: "TASK_DECOMPOSITION", ponytail: "lite" },
+    { id: "TRACEABILITY_CHECK", ponytail: "lite" },
+    { id: "TDD_PLAN", ponytail: "lite" },
+    { id: "IMPLEMENTATION_REVIEW", gate: "implementation_plan", ponytail: "lite" },
+    { id: "BUILD", ponytail: "full" },
+    { id: "TASK_REVIEW", ponytail: "full", ponytail_review: true },
+    { id: "INTEGRATION_REVIEW", ponytail: "full" },
+    { id: "COMPLETION_GATE", ponytail: "full", ponytail_audit: "optional" },
+    { id: "COMPLETE", terminal: true, ponytail: "off" },
+  ],
+};
