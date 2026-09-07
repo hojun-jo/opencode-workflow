@@ -1,7 +1,7 @@
 ---
 description: Designs approved architecture and ADRs without modifying product source
 mode: subagent
-model: openai/gpt-5.6-sol
+model: openai/gpt-5.6-terra
 reasoningEffort: high
 textVerbosity: medium
 permission:

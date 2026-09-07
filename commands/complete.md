@@ -1,7 +1,6 @@
 ---
 description: Run final integration and traceability verification before completion
-agent: reviewer
-model: openai/gpt-5.6-sol
+agent: verifier
 subagent: true
 ---
 

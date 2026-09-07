@@ -2,7 +2,7 @@
 description: Performs independent integration, prototype evaluation, and completion verification
 mode: subagent
 model: openai/gpt-5.6-sol
-reasoningEffort: high
+reasoningEffort: medium
 textVerbosity: low
 permission:
   edit:
