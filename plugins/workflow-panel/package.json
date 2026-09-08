@@ -1,0 +1,14 @@
+{
+  "name": "opencode-workflow-panel",
+  "private": true,
+  "type": "module",
+  "main": "./tui.tsx",
+  "exports": {
+    "./tui": "./tui.tsx"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "1.18.27",
+    "@opentui/solid": "0.4.5",
+    "solid-js": "1.9.12"
+  }
+}

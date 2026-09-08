@@ -1,5 +1,6 @@
 {
   "plugin": [
-    "oh-my-openagent@latest"
+    "oh-my-openagent@latest",
+    "/Users/hojun/.config/opencode/plugins/workflow-panel"
   ]
 }
