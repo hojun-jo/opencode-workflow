@@ -75,6 +75,13 @@ test("full profile uses Open Design artifacts and both human gates", () => {
     complete(work.directory, "TRACEABILITY_CHECK");
     work.artifact("tasks/tdd-plan.md");
     complete(work.directory, "TDD_PLAN");
+    state = rejectGate(work.directory, {
+      gate: "implementation_plan",
+      reason: "Split the oversized implementation plan into session-sized tasks",
+    });
+    assert.equal(state.stage, "TDD_PLAN");
+    assert.equal(state.workflow.status, "running");
+    complete(work.directory, "TDD_PLAN");
     state = approveGate(work.directory, { gate: "implementation_plan" });
     assert.equal(state.stage, "BUILD");
     assert.equal(workflowStatus(work.directory).ponytail.mode, "full");

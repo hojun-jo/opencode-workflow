@@ -1,6 +1,7 @@
 ---
 description: Evaluate a prototype and record KEEP, ITERATE, or DROP
 agent: verifier
+model: openai/gpt-5.6-terra
 subagent: true
 ---
 

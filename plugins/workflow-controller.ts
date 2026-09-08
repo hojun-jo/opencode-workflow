@@ -311,6 +311,9 @@ const WorkflowController: Plugin = async ({ directory, client }) => ({
       allowedWhileWaiting.add("design");
       allowedWhileWaiting.add("full/design");
     }
+    if (state.stage === "IMPLEMENTATION_REVIEW") {
+      allowedWhileWaiting.add("plan");
+    }
     if (state.workflow.status === "waiting_human" && !allowedWhileWaiting.has(input.command)) {
       throw new Error(`/${input.command} is blocked while waiting for explicit human approval at ${state.stage}.`);
     }

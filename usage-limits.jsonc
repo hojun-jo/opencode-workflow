@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/mynameistito/oc-usage-limits-plugin/main/usage-limits.schema.json",
+  "enabled": true,
+  "refreshIntervalSeconds": 60,
+  "requestTimeoutMs": 10000,
+  "showErrors": true,
+  "providers": {
+    "codex": {
+      "enabled": true,
+      "label": "Codex",
+      "showSidebarBar": true,
+      "showFooterBar": false,
+      "sidebarWindow": "all"
+    },
+    "opencode-go": {
+      "enabled": true,
+      "label": "OpenCode Go",
+      "showSidebarBar": true,
+      "showFooterBar": false,
+      "sidebarWindow": "all"
+    }
+  }
+}

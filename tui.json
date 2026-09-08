@@ -1,6 +1,7 @@
 {
   "plugin": [
     "oh-my-openagent@latest",
-    "/Users/hojun/.config/opencode/plugins/workflow-panel"
+    "/Users/hojun/.config/opencode/plugins/workflow-panel",
+    "oc-usage-limits-plugin"
   ]
 }

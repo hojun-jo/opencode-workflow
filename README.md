@@ -189,5 +189,5 @@ Game family를 초기화하면 프로젝트에 `.opencode/` 기반 OGS agent, sk
 구현을 수정한 뒤에는 다음 테스트를 실행합니다.
 
 ```bash
-node --test workflow/*.test.mjs
+node --test workflow/*.test.mjs plugins/*.test.mjs
 ```

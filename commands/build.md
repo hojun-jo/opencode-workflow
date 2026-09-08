@@ -1,7 +1,7 @@
 ---
 description: Implement one approved ready task using a verified TDD cycle
 agent: build
-model: opencode-go/kimi-k2.7-code
+model: opencode-go/qwen3.8-flash
 subagent: false
 ---
 
