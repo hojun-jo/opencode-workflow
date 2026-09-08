@@ -4,4 +4,4 @@ agent: reviewer
 subagent: true
 ---
 
-Review regression evidence and side effects independently. Write regression-review and documentation-check artifacts, then complete `REGRESSION_REVIEW` and `DOCUMENTATION_CHECK` through the controller.
+Review regression evidence and side effects independently. Write only the active stage's artifact, complete that stage through the controller, and let it dispatch the next non-human stage automatically.

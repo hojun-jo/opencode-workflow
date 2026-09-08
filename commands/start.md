@@ -9,7 +9,7 @@ Start a workflow from `$ARGUMENTS`. Parse the first token as one of `full`, `qui
 Supported options:
 
 - `--from start|auto|design|architecture|planning|build|review`
-- `--verified-gate product_design|implementation_plan|prototype_review` (repeatable)
+- `--verified-gate product_design|implementation_plan` (repeatable)
 - `--source STAGE=PATH_OR_URL` (repeatable)
 - `--reset`
 

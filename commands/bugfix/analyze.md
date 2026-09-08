@@ -4,4 +4,4 @@ agent: build
 subagent: false
 ---
 
-Load `bug-analysis`. Produce bug report, reproduction, root cause, affected scope, and regression-test artifacts. Do not change source before `FIX`; advance each stage only with `workflow_complete_stage`.
+Load `bug-analysis`. Produce only the active stage's artifact. Do not change source before `FIX`; call `workflow_complete_stage` once and let the controller dispatch the next non-human stage.

@@ -8,9 +8,9 @@ metadata:
 
 # Task planning
 
-Run after architecture exists and before implementation approval.
+Run after architecture exists and before implementation approval. Complete only the active planning stage; the controller dispatches the next planning stage automatically.
 
-Create `.workflow/tasks/tasks.json` as an object with `schema_version: 1` and a `tasks` array. Every task must contain:
+At `TASK_DECOMPOSITION`, create `.workflow/tasks/tasks.json` as an object with `schema_version: 1` and a `tasks` array. Every task must contain:
 
 ```json
 {
@@ -44,4 +44,4 @@ Rules:
 - Every requirement maps to at least one task and test strategy. Do not create orphan tasks.
 - Architecture changes are not hidden inside tasks. Return to architecture if a missing decision is discovered.
 
-Update traceability and `.workflow/tasks/tdd-plan.md`. Do not edit workflow state; call `workflow_complete_stage` for `TASK_DECOMPOSITION`, `TRACEABILITY_CHECK`, and `TDD_PLAN` only when each required artifact is ready.
+At `TASK_DECOMPOSITION`, write the task file. At `TRACEABILITY_CHECK`, update traceability. At `TDD_PLAN`, write `.workflow/tasks/tdd-plan.md`. Do not edit workflow state; call `workflow_complete_stage` once for the active stage and do not call `workflow_dispatch`.

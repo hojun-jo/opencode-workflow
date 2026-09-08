@@ -57,7 +57,7 @@ const requiredArtifacts = {
   GOAL: ["requirements/feature-spec.md"],
   SUCCESS_CRITERIA: ["requirements/success-criteria.md"],
   CONSTRAINTS: ["prototypes/constraints.md"],
-  PROTOTYPE_REVIEW: ["prototypes/build.md"],
+  PROTOTYPE_REVIEW: ["prototypes/build.md", "reviews/prototype-review.md"],
   EVALUATE: ["prototypes/evaluation.md"],
   DECISION: ["prototypes/decision.md"],
   INTEGRATION_REVIEW: ["reviews/integration.md", "traceability.json"],
@@ -67,7 +67,6 @@ const requiredArtifacts = {
 const gateFallbackStage = {
   product_design: "OPEN_DESIGN",
   implementation_plan: "TDD_PLAN",
-  prototype_review: "OPEN_DESIGN",
 };
 
 const timestamp = () => new Date().toISOString();
@@ -78,7 +77,6 @@ function defaultGates() {
   return {
     product_design: { status: "pending", approved_at: null },
     implementation_plan: { status: "pending", approved_at: null },
-    prototype_review: { status: "pending", approved_at: null },
     completion: { status: "pending", approved_at: null },
   };
 }
@@ -115,6 +113,9 @@ function normalizeState(value) {
   if (!state.stage || typeof state.stage !== "string") state.stage = "FEATURE_DEFINITION";
   if (state.workflow.profile === "full" && state.stage === "WIREFRAME") state.stage = "OPEN_DESIGN";
   if (state.workflow.profile === "prototype" && state.stage === "MINIMAL_DESIGN") state.stage = "OPEN_DESIGN";
+  if (state.workflow.profile === "prototype" && state.stage === "PROTOTYPE_REVIEW" && state.workflow.status === "waiting_human") {
+    state.workflow.status = "running";
+  }
   const definition = profiles[state.workflow.profile] ?? profiles.full;
   const currentIndex = definition.stages.findIndex((stage) => stage.id === state.stage);
   const completedFromHistory = new Set(state.history
@@ -228,6 +229,7 @@ export function nextStage(state) {
 }
 
 function artifactsFor(stage, profile) {
+  if (stage === "BUILD" && profile === "prototype") return ["prototypes/build.md"];
   if (stage === "OPEN_DESIGN" && profile === "prototype") {
     return [
       "requirements/feature-spec.md",
@@ -833,6 +835,9 @@ export function workflowStatus(directory) {
   const missing = missingArtifacts(directory, state.stage, state.workflow.profile);
   const current = currentStageDefinition(state);
   const gate = current?.gate ?? null;
+  const humanReviewReason = state.workflow.status === "waiting_human" && !gate
+    ? [...(state.history ?? [])].reverse().find((entry) => entry.event === "human_review_requested")?.reason ?? null
+    : null;
   return {
     profile: state.workflow.profile,
     goal: state.workflow.goal,
@@ -849,6 +854,7 @@ export function workflowStatus(directory) {
       audit: current?.ponytail_audit ?? null,
     },
     waiting_for_gate: state.workflow.status === "waiting_human" ? gate ?? "HUMAN_REVIEW" : null,
+    human_review_reason: humanReviewReason,
     missing_artifacts: missing.map((path) => `.workflow/${path}`),
     next_stage: state.workflow.status === "waiting_human" ? null : nextStage(state)?.id ?? null,
   };

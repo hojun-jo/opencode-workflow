@@ -11,6 +11,7 @@ import {
   inspectExistingWorkflow,
   readWorkflow,
   rejectGate,
+  requestHumanReview,
   skipStage,
   startWorkflow,
   workflowStatus,
@@ -156,10 +157,11 @@ test("bugfix profile continues to skip Open Design", () => {
   }
 });
 
-test("prototype uses focused Open Design and a build review gate", () => {
+test("prototype uses focused Open Design and an automatic build-review-evaluation path", () => {
   const work = fixture();
   try {
     startWorkflow(work.directory, { profile: "prototype", goal: "Prototype test" });
+    assert.equal(getProfile("prototype").stages.find((stage) => stage.id === "PROTOTYPE_REVIEW")?.gate, undefined);
     work.artifact("requirements/feature-spec.md");
     complete(work.directory, "GOAL");
     work.artifact("requirements/success-criteria.md");
@@ -172,20 +174,54 @@ test("prototype uses focused Open Design and a build review gate", () => {
     work.artifact("design/wireframes/prototype.md");
     work.artifact("design/screens/prototype.md");
     complete(work.directory, "OPEN_DESIGN");
+    assert.throws(() => complete(work.directory, "BUILD"), /prototypes\/build\.md/);
+    work.artifact("prototypes/build.md");
     let state = complete(work.directory, "BUILD");
     assert.equal(state.stage, "PROTOTYPE_REVIEW");
-    assert.equal(state.workflow.status, "waiting_human");
-    assert.deepEqual(workflowStatus(work.directory).missing_artifacts, [".workflow/prototypes/build.md"]);
-    assert.throws(() => approveGate(work.directory, { gate: "prototype_review" }), /prototypes\/build\.md/);
+    assert.equal(state.workflow.status, "running");
+    assert.deepEqual(workflowStatus(work.directory).missing_artifacts, [".workflow/reviews/prototype-review.md"]);
 
-    work.artifact("prototypes/build.md");
-    state = approveGate(work.directory, { gate: "prototype_review" });
+    work.artifact("reviews/prototype-review.md");
+    state = complete(work.directory, "PROTOTYPE_REVIEW");
     assert.equal(state.stage, "EVALUATE");
     work.artifact("prototypes/evaluation.md");
     complete(work.directory, "EVALUATE");
     work.artifact("prototypes/decision.md", "KEEP\n");
     state = complete(work.directory, "DECISION");
     assert.equal(state.workflow.status, "complete");
+  } finally {
+    work.cleanup();
+  }
+});
+
+test("workflow status separates a dynamic human review from pending future gates", () => {
+  const work = fixture();
+  try {
+    startWorkflow(work.directory, { profile: "full", goal: "Human review status test" });
+    requestHumanReview(work.directory, { reason: "Connect the physical device and complete offline validation." });
+
+    const status = workflowStatus(work.directory);
+    assert.equal(status.waiting_for_gate, "HUMAN_REVIEW");
+    assert.equal(status.human_review_reason, "Connect the physical device and complete offline validation.");
+    assert.notEqual(status.waiting_for_gate, "completion");
+  } finally {
+    work.cleanup();
+  }
+});
+
+test("legacy prototype review waits migrate to an automatic review stage", () => {
+  const work = fixture();
+  try {
+    startWorkflow(work.directory, { profile: "prototype", goal: "Prototype migration test" });
+    work.artifact("state.json", JSON.stringify({
+      schema_version: 4,
+      workflow: { profile: "prototype", goal: "Prototype migration test", status: "waiting_human", started_at: null },
+      stage: "PROTOTYPE_REVIEW",
+      gates: { prototype_review: { status: "pending", approved_at: null } },
+    }));
+    const state = readWorkflow(work.directory);
+    assert.equal(state.stage, "PROTOTYPE_REVIEW");
+    assert.equal(state.workflow.status, "running");
   } finally {
     work.cleanup();
   }

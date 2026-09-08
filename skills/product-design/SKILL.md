@@ -8,7 +8,7 @@ metadata:
 
 # Product design
 
-Use this skill for the workflow's feature-definition and initial-user-flow stages. Load `open-design` for the subsequent visual and interaction exploration.
+Use this skill for the workflow's feature-definition and initial-user-flow stages. Complete only the active stage; the controller dispatches the following Open Design stage.
 
 ## Inputs
 
@@ -18,11 +18,7 @@ Use this skill for the workflow's feature-definition and initial-user-flow stage
 
 ## Required outputs
 
-Create or update:
-
-1. `.workflow/requirements/feature-spec.md`
-2. `.workflow/design/user-flow.md`
-3. `.workflow/traceability.json`
+At `FEATURE_DEFINITION`, create or update `.workflow/requirements/feature-spec.md` and initialize applicable traceability. At `USER_FLOW`, create or update `.workflow/design/user-flow.md` and extend traceability for the flow.
 
 ## Feature specification
 
@@ -40,4 +36,4 @@ Create or update:
 
 ## Exit rule
 
-Check that every applicable requirement appears in the initial flow and update traceability. Advance only by calling `workflow_complete_stage`; never edit `.workflow/state.json`. Do not approve a gate or begin architecture.
+Check the evidence required for the active stage and update traceability where applicable. Advance only the active stage by calling `workflow_complete_stage`; never edit `.workflow/state.json`, call `workflow_dispatch`, approve a gate, or begin architecture.

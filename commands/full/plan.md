@@ -4,4 +4,4 @@ agent: architect
 subagent: true
 ---
 
-Load `architecture`, `task-planning`, `traceability`, and `tdd`. Create the required artifacts and complete `ARCHITECTURE`, `TASK_DECOMPOSITION`, `TRACEABILITY_CHECK`, and `TDD_PLAN` in order. Stop for the implementation-plan human gate.
+Load the skill required for the active planning stage. Create only that stage's required artifacts and complete it. The controller dispatches subsequent planning stages automatically and stops at the implementation-plan human gate.

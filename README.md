@@ -41,7 +41,7 @@ OpenCode를 이 설정으로 실행한 뒤, 프로젝트 디렉터리에서 다�
 
 ## Software / App workflow
 
-모든 단계는 controller가 관리합니다. worker는 현재 단계에 필요한 artifact를 만들고, `workflow_complete_stage`를 호출해 다음 단계로 이동합니다. 사용자가 승인해야 하는 지점에서는 자동으로 멈춥니다.
+모든 단계는 controller가 관리합니다. worker는 현재 단계에 필요한 artifact를 만들고 `workflow_complete_stage`를 호출합니다. controller는 다음 non-human worker를 자동으로 디스패치하며, 명시된 Human Gate 또는 구체적인 `HUMAN_REQUIRED` 판단에서만 멈춥니다.
 
 ### Full
 
@@ -95,11 +95,10 @@ BUG_REPORT → REPRODUCE → ROOT_CAUSE → AFFECTED_SCOPE
 
 ```text
 GOAL → SUCCESS_CRITERIA → CONSTRAINTS → USER_FLOW → OPEN_DESIGN
-→ BUILD → PROTOTYPE_REVIEW [Human Gate]
-→ EVALUATE → DECISION → COMPLETE
+→ BUILD → PROTOTYPE_REVIEW → EVALUATE → DECISION → COMPLETE
 ```
 
-프로토타입 승인 후에는 `/prototype/evaluate`가 `KEEP`, `ITERATE`, `DROP` 중 하나를 기록합니다. `KEEP`은 자동으로 정식 개발로 전환하지 않으며, 새 `/start quick ...` 또는 `/start full ...`을 시작합니다.
+프로토타입은 `opencode-go/qwen3.8-flash` builder가 최소 구현을 맡고, 독립 review와 verification이 자동으로 `KEEP`, `ITERATE`, `DROP` 중 하나를 기록합니다. `KEEP`은 자동으로 정식 개발로 전환하지 않으며, 새 `/start quick ...` 또는 `/start full ...`을 시작합니다.
 
 ## Human Gate 사용법
 
@@ -109,7 +108,6 @@ Human Gate는 artifact가 존재한다는 이유만으로 통과하지 않습니
 | --- | --- | --- |
 | `PRODUCT_REVIEW` | 요구사항, user flow, wireframe, 상태/상호작용, design review | `/approve-design` |
 | `IMPLEMENTATION_REVIEW` | architecture, task dependency, traceability, TDD plan | `/approve-plan` |
-| `PROTOTYPE_REVIEW` | prototype build 및 실행/검토 방법 | `/prototype/approve` |
 
 수정이 필요하면 해당 gate를 승인하지 말고 `/design <변경 요청>` 또는 `/plan <변경 요청>`으로 다시 작업합니다. 현재 gate를 범용적으로 승인할 때는 `/approve`를 사용할 수 있습니다.
 
@@ -154,8 +152,7 @@ Human Gate는 artifact가 존재한다는 이유만으로 통과하지 않습니
 | 설계/계획 | `/design`, `/plan`, `/full/design`, `/full/plan` |
 | 구현/검토 | `/build`, `/review`, `/quick/build` |
 | 완료 검증 | `/complete`, `/full/verify` |
-| 승인 | `/approve`, `/approve-design`, `/approve-plan`, `/prototype/approve` |
-| Prototype 평가 | `/prototype/evaluate` |
+| 승인 | `/approve`, `/approve-design`, `/approve-plan` |
 | Bugfix 단계 | `/bugfix/analyze`, `/bugfix/review` |
 | 상태/제어 | `/status`, `/workflow-status`, `/resume`, `/workflow-skip <reason>` |
 | Game onboarding | `/game/start` |

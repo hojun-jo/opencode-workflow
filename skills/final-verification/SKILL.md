@@ -19,8 +19,8 @@ Verify:
 - Documentation and traceability match shipped behavior.
 - There are no unresolved decisions, skipped tasks, uncovered requirements, or unacknowledged risks.
 
-Write `.workflow/reviews/integration.md` and `.workflow/reviews/final.md` with commands, results, coverage gaps, residual risks, and exactly one decision.
+At `INTEGRATION_REVIEW`, write `.workflow/reviews/integration.md`. At `COMPLETION_GATE`, write `.workflow/reviews/final.md`. Each artifact must record commands, results, coverage gaps, residual risks, and exactly one decision.
 
-- `PASS`: call `workflow_complete_stage` for `INTEGRATION_REVIEW`, then `COMPLETION_GATE`.
+- `PASS`: call `workflow_complete_stage` for the active stage only; the controller dispatches `COMPLETION_GATE` after an integration pass.
 - `FIX_REQUIRED`: identify affected tasks/requirements and return the work to a bounded build task.
 - `HUMAN_REQUIRED`: call `workflow_request_human_review` with the exact decision required.

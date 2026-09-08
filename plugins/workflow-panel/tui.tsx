@@ -61,7 +61,18 @@ function readPanelState(directory: string, sessionStatus: (id: string) => { type
 
 function WorkflowStatus(props: { state: () => PanelState }) {
   const panel = () => props.state();
-  const gate = () => Object.entries(panel().workflow?.gates ?? {}).find(([, value]) => value.status === "pending")?.[0];
+  const gate = () => {
+    const workflow = panel().workflow;
+    if (workflow?.workflow?.status !== "waiting_human") return undefined;
+
+    const stageGate = {
+      PRODUCT_REVIEW: "product_design",
+      IMPLEMENTATION_REVIEW: "implementation_plan",
+    }[workflow.stage ?? ""];
+    if (stageGate && workflow.gates?.[stageGate]?.status === "pending") return stageGate;
+
+    return "HUMAN_REVIEW";
+  };
 
   if (panel().kind === "missing") return null;
   if (panel().kind === "error") return <text fg="red">Workflow state unavailable</text>;

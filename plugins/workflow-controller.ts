@@ -19,7 +19,7 @@ import { detectProjectFamily, initializeProjectFamily, supportedGameEngines } fr
 
 const managedCommands = new Set([
   "workflow-init", "workflow-inspect", "workflow-skip", "start", "workflow-status", "approve", "approve-design", "approve-plan",
-  "design", "plan", "build", "review", "complete", "full/design", "prototype/approve",
+  "design", "plan", "build", "review", "complete", "full/design",
 ]);
 const sourceMutationTools = new Set(["write", "edit", "patch", "apply_patch", "bash", "shell"]);
 const pathArgumentNames = new Set([
@@ -75,22 +75,27 @@ function assertMutationAllowed(directory: string, toolName: string, args: unknow
   }
 }
 
-function workerForStage(stage: string) {
+function workerForStage(state: ReturnType<typeof readWorkflow>) {
+  const stage = state.stage;
+  if (state.workflow.profile === "prototype" && ["GOAL", "SUCCESS_CRITERIA", "CONSTRAINTS", "BUILD"].includes(stage)) return "prototype-builder";
   if (["FEATURE_DEFINITION", "USER_FLOW", "OPEN_DESIGN", "OPEN_DESIGN_LITE"].includes(stage)) return "product-designer";
   if (stage === "ARCHITECTURE") return "architect";
+  if (stage === "PROTOTYPE_REVIEW") return "reviewer";
   if (["TASK_REVIEW", "REGRESSION_REVIEW"].includes(stage)) return "reviewer";
   if (["INTEGRATION_REVIEW", "COMPLETION_GATE", "EVALUATE", "DECISION"].includes(stage)) return "verifier";
   return "build";
 }
 
-function skillForStage(stage: string) {
+function skillForStage(state: ReturnType<typeof readWorkflow>) {
+  const stage = state.stage;
   if (["FEATURE_DEFINITION", "USER_FLOW"].includes(stage)) return "product-design";
   if (["OPEN_DESIGN", "OPEN_DESIGN_LITE"].includes(stage)) return "open-design";
   if (stage === "ARCHITECTURE") return "architecture";
   if (["TASK_DECOMPOSITION", "TASK_DEFINITION", "LIGHT_PLAN"].includes(stage)) return "task-planning";
   if (stage === "TRACEABILITY_CHECK") return "traceability";
   if (stage === "TDD_PLAN") return "tdd";
-  if (["BUILD", "FIX"].includes(stage)) return "tdd-build";
+  if (stage === "BUILD" && state.workflow.profile !== "prototype") return "tdd-build";
+  if (stage === "FIX") return "tdd-build";
   if (["TASK_REVIEW", "REGRESSION_REVIEW"].includes(stage)) return "independent-review";
   if (["INTEGRATION_REVIEW", "COMPLETION_GATE"].includes(stage)) return "final-verification";
   if (["BUG_REPORT", "REPRODUCE", "ROOT_CAUSE", "AFFECTED_SCOPE", "REGRESSION_TEST", "DOCUMENTATION_CHECK"].includes(stage)) return "bug-analysis";
@@ -119,18 +124,12 @@ function ponytailDirective(state: ReturnType<typeof readWorkflow>) {
 
 function stagePrompt(state: ReturnType<typeof readWorkflow>) {
   const stage = state.stage;
-  const skill = skillForStage(stage);
-  let runbook = "Complete only the current stage and call workflow_complete_stage. If the returned workflow status is running, call workflow_dispatch exactly once for the next dedicated worker; otherwise stop.";
+  const skill = skillForStage(state);
+  let runbook = "Complete only the current stage and call workflow_complete_stage. The controller dispatches the next non-human stage automatically; do not call workflow_dispatch. Stop after the completion call.";
   if (state.workflow.profile === "prototype" && stage === "BUILD") {
-    runbook = "Build only the minimum prototype needed to test the hypothesis. Record what was built, launch/review instructions, known gaps, and review evidence in .workflow/prototypes/build.md. Call workflow_complete_stage for BUILD, then stop at PROTOTYPE_REVIEW without dispatching another worker.";
-  } else if (state.workflow.profile !== "full") {
-    runbook = "Complete only the current stage and call workflow_complete_stage. If the returned workflow status is running, call workflow_dispatch exactly once to start the next dedicated worker. Stop at a human wait or completion.";
-  } else if (["FEATURE_DEFINITION", "USER_FLOW", "OPEN_DESIGN"].includes(stage)) {
-    runbook = "Complete the whole product-design lane: requirements and initial user flow using product-design, then load open-design for flow validation, wireframes, screen exploration, interactions/states, design-system guidance, and critique. Call workflow_complete_stage in order for FEATURE_DEFINITION, USER_FLOW, and OPEN_DESIGN. The controller must then stop at the product-design human gate; do not dispatch another worker.";
-  } else if (stage === "BUILD") {
-    runbook = "Implement exactly one ready task with the TDD policy, mark it review_ready in tasks.json, and call workflow_complete_stage for BUILD. Then call workflow_dispatch exactly once to start the independent review worker.";
-  } else if (stage === "TASK_REVIEW") {
-    runbook = "Independently review the current task, update tasks.json and review artifacts, then call workflow_complete_stage for TASK_REVIEW. If its result remains running (BUILD or INTEGRATION_REVIEW), call workflow_dispatch exactly once. Stop when it reports HUMAN_REVIEW.";
+    runbook = "Build only the minimum prototype needed to test the hypothesis. Record what was built, launch/review instructions, known gaps, and verification evidence in .workflow/prototypes/build.md. Call workflow_complete_stage for BUILD; the controller starts the independent prototype review automatically. Do not call workflow_dispatch.";
+  } else if (state.workflow.profile === "prototype" && stage === "PROTOTYPE_REVIEW") {
+    runbook = "Independently inspect the prototype build artifact, current source, launch instructions, and available checks. Write .workflow/reviews/prototype-review.md. If a concrete human decision is required, call workflow_request_human_review and stop. Otherwise call workflow_complete_stage for PROTOTYPE_REVIEW; the controller starts evaluation automatically. Do not call workflow_dispatch.";
   }
   return [
     `You are the dedicated worker for managed workflow stage ${stage}.`,
@@ -149,7 +148,7 @@ function stagePrompt(state: ReturnType<typeof readWorkflow>) {
 async function dispatchCurrentStage(client: Parameters<Plugin>[0]["client"], directory: string) {
   const state = readWorkflow(directory);
   if (state.workflow.status !== "running") throw new Error(`Cannot dispatch while workflow status is ${state.workflow.status}.`);
-  const agent = workerForStage(state.stage);
+  const agent = workerForStage(state);
   const created = await client.session.create({
     query: { directory },
     body: { title: `${state.workflow.profile.toUpperCase()} - ${state.stage}` },
@@ -203,7 +202,7 @@ const WorkflowController: Plugin = async ({ directory, client }) => ({
         reset: tool.schema.boolean().optional(),
         dispatch: tool.schema.boolean().optional(),
         from: tool.schema.enum(["start", "auto", "design", "architecture", "planning", "build", "review"]).optional(),
-        verifiedGates: tool.schema.array(tool.schema.enum(["product_design", "implementation_plan", "prototype_review"])).optional(),
+        verifiedGates: tool.schema.array(tool.schema.enum(["product_design", "implementation_plan"])).optional(),
         sources: tool.schema.array(tool.schema.object({
           stage: tool.schema.string().min(1),
           source: tool.schema.string().min(1),
@@ -238,9 +237,9 @@ const WorkflowController: Plugin = async ({ directory, client }) => ({
       },
     }),
     workflow_approve: tool({
-      description: "Record an explicit human approval for the active product-design, implementation-plan, or prototype-review gate.",
+      description: "Record an explicit human approval for the active product-design or implementation-plan gate.",
       args: {
-        gate: tool.schema.enum(["product_design", "implementation_plan", "prototype_review"]),
+        gate: tool.schema.enum(["product_design", "implementation_plan"]),
         dispatch: tool.schema.boolean().optional(),
       },
       async execute(args, context) {
@@ -252,7 +251,7 @@ const WorkflowController: Plugin = async ({ directory, client }) => ({
     workflow_reject: tool({
       description: "Reject the active human gate with a reason and return to its revision stage.",
       args: {
-        gate: tool.schema.enum(["product_design", "implementation_plan", "prototype_review"]),
+        gate: tool.schema.enum(["product_design", "implementation_plan"]),
         reason: tool.schema.string().min(1),
       },
       async execute(args, context) {
@@ -260,10 +259,14 @@ const WorkflowController: Plugin = async ({ directory, client }) => ({
       },
     }),
     workflow_continue: tool({
-      description: "Validate and complete the current non-human stage, then move to its next stage.",
+      description: "Resume or complete the current non-human stage, then automatically dispatch the active worker.",
       args: { summary: tool.schema.string().optional() },
       async execute(args, context) {
-        return json(continueWorkflow(context.directory, args));
+        const state = continueWorkflow(context.directory, args);
+        const dispatch = state.workflow.status === "running"
+          ? await dispatchCurrentStage(client, context.directory)
+          : null;
+        return json({ state, dispatch });
       },
     }),
     workflow_request_human_review: tool({
@@ -281,7 +284,11 @@ const WorkflowController: Plugin = async ({ directory, client }) => ({
         confirmedByUser: tool.schema.boolean(),
       },
       async execute(args, context) {
-        return json(skipStage(context.directory, args));
+        const state = skipStage(context.directory, args);
+        const dispatch = state.workflow.status === "running"
+          ? await dispatchCurrentStage(client, context.directory)
+          : null;
+        return json({ state, dispatch });
       },
     }),
     workflow_dispatch: tool({
@@ -292,10 +299,14 @@ const WorkflowController: Plugin = async ({ directory, client }) => ({
       },
     }),
     workflow_complete_stage: tool({
-      description: "Validate and complete one exact current stage. The supplied stage must equal current workflow state.",
+      description: "Validate and complete one exact current stage, then automatically dispatch the next non-human stage.",
       args: { stage: tool.schema.string().min(1), summary: tool.schema.string().optional() },
       async execute(args, context) {
-        return json(completeStage(context.directory, args));
+        const state = completeStage(context.directory, args);
+        const dispatch = state.workflow.status === "running"
+          ? await dispatchCurrentStage(client, context.directory)
+          : null;
+        return json({ state, dispatch });
       },
     }),
   },
@@ -306,7 +317,7 @@ const WorkflowController: Plugin = async ({ directory, client }) => ({
     }
     if (!managedCommands.has(input.command) || ["workflow-inspect", "workflow-status", "start"].includes(input.command)) return;
     const state = readWorkflow(directory);
-    const allowedWhileWaiting = new Set(["approve", "approve-design", "approve-plan", "prototype/approve"]);
+    const allowedWhileWaiting = new Set(["approve", "approve-design", "approve-plan"]);
     if (state.stage === "PRODUCT_REVIEW") {
       allowedWhileWaiting.add("design");
       allowedWhileWaiting.add("full/design");
