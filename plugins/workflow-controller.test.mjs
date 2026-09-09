@@ -3,15 +3,19 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import WorkflowController from "./workflow-controller.ts";
-import { approveGate, completeStage, startWorkflow } from "../workflow/engine.mjs";
+import WorkflowController, { modelForStage } from "./workflow-controller.ts";
+import { approveGate, completeStage, readWorkflow, startWorkflow } from "../workflow/engine.mjs";
 
 function fixture() {
   const directory = mkdtempSync(join(tmpdir(), "opencode-workflow-controller-"));
   return {
     directory,
     artifact(relativePath, content = "evidence\n") {
-      const path = join(directory, ".workflow", relativePath);
+      const state = readWorkflow(directory);
+      const root = state.workflow.artifact_root
+        ? join(directory, ".workflow", state.workflow.artifact_root)
+        : join(directory, ".workflow");
+      const path = join(root, relativePath);
       mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, content, "utf8");
     },
@@ -109,7 +113,7 @@ test("prototype workflow starts with the dedicated Qwen builder agent", async ()
       session: {
         create: async () => ({ data: { id: "prototype-builder-session" } }),
         promptAsync: async (request) => {
-          dispatched.push(request.body.agent);
+          dispatched.push({ agent: request.body.agent, model: request.body.model });
           return {};
         },
       },
@@ -118,7 +122,25 @@ test("prototype workflow starts with the dedicated Qwen builder agent", async ()
     const startTool = controller.tool.workflow_start;
 
     await startTool.execute({ profile: "prototype", goal: "Qwen builder selection", dispatch: true }, { directory: work.directory });
-    assert.deepEqual(dispatched, ["prototype-builder"]);
+    assert.deepEqual(dispatched, [{
+      agent: "prototype-builder",
+      model: { providerID: "opencode-go", modelID: "qwen3.8-flash" },
+    }]);
+  } finally {
+    work.cleanup();
+  }
+});
+
+test("workflow stages select an explicit model instead of OMO defaults", () => {
+  const work = fixture();
+  try {
+    const full = startWorkflow(work.directory, { profile: "full", goal: "Explicit model test" });
+    assert.deepEqual(modelForStage(full), { providerID: "openai", modelID: "gpt-5.6-terra" });
+    assert.deepEqual(modelForStage({ ...full, stage: "BUILD" }), { providerID: "opencode-go", modelID: "qwen3.8-flash" });
+    assert.deepEqual(modelForStage({ ...full, stage: "TDD_PLAN" }), { providerID: "openai", modelID: "gpt-5.6-terra" });
+
+    const quick = startWorkflow(work.directory, { profile: "quick", goal: "Explicit model test", reset: true });
+    assert.deepEqual(modelForStage(quick), { providerID: "opencode-go", modelID: "glm-5.3-flash" });
   } finally {
     work.cleanup();
   }

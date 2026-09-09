@@ -86,6 +86,20 @@ function workerForStage(state: ReturnType<typeof readWorkflow>) {
   return "build";
 }
 
+const terra = { providerID: "openai", modelID: "gpt-5.6-terra" };
+const qwenFlash = { providerID: "opencode-go", modelID: "qwen3.8-flash" };
+const glmFlash = { providerID: "opencode-go", modelID: "glm-5.3-flash" };
+
+export function modelForStage(state: ReturnType<typeof readWorkflow>) {
+  const agent = workerForStage(state);
+  if (["product-designer", "architect", "reviewer", "verifier"].includes(agent)) return terra;
+  if (agent === "prototype-builder") return qwenFlash;
+
+  if (["BUILD", "FIX"].includes(state.stage)) return qwenFlash;
+  if (["TASK_DECOMPOSITION", "TASK_DEFINITION", "LIGHT_PLAN", "TRACEABILITY_CHECK", "TDD_PLAN"].includes(state.stage)) return terra;
+  return glmFlash;
+}
+
 function skillForStage(state: ReturnType<typeof readWorkflow>) {
   const stage = state.stage;
   if (["FEATURE_DEFINITION", "USER_FLOW"].includes(stage)) return "product-design";
@@ -114,7 +128,7 @@ function ponytailDirective(state: ReturnType<typeof readWorkflow>) {
     ? "Use Ponytail lite: implement the requested stage faithfully, and name a simpler viable alternative only when it helps the decision."
     : "Use Ponytail full: after understanding the task, apply YAGNI, reuse existing patterns, prefer stdlib/native capabilities, avoid new dependencies and abstractions, and make the smallest correct change.";
   const review = current?.ponytail_review
-    ? " Before completing this stage, perform the current-diff checks from /ponytail-review and record its findings or 'Lean already. Ship.' in .workflow/reviews/ponytail-review.md."
+    ? ` Before completing this stage, perform the current-diff checks from /ponytail-review and record its findings or 'Lean already. Ship.' in ${artifactRoot(state)}/reviews/ponytail-review.md.`
     : "";
   const audit = current?.ponytail_audit === "optional"
     ? " Do not run /ponytail-audit by default; recommend it only when the integration review shows repository-wide duplication or systemic over-engineering."
@@ -122,19 +136,25 @@ function ponytailDirective(state: ReturnType<typeof readWorkflow>) {
   return `Ponytail stage mode: ${mode.toUpperCase()}. ${intensity}${review}${audit} ${shared}`;
 }
 
+function artifactRoot(state: ReturnType<typeof readWorkflow>) {
+  return state.workflow.artifact_root ? `.workflow/${state.workflow.artifact_root}` : ".workflow";
+}
+
 function stagePrompt(state: ReturnType<typeof readWorkflow>) {
   const stage = state.stage;
   const skill = skillForStage(state);
+  const root = artifactRoot(state);
   let runbook = "Complete only the current stage and call workflow_complete_stage. The controller dispatches the next non-human stage automatically; do not call workflow_dispatch. Stop after the completion call.";
   if (state.workflow.profile === "prototype" && stage === "BUILD") {
-    runbook = "Build only the minimum prototype needed to test the hypothesis. Record what was built, launch/review instructions, known gaps, and verification evidence in .workflow/prototypes/build.md. Call workflow_complete_stage for BUILD; the controller starts the independent prototype review automatically. Do not call workflow_dispatch.";
+    runbook = `Build only the minimum prototype needed to test the hypothesis. Record what was built, launch/review instructions, known gaps, and verification evidence in ${root}/prototypes/build.md. Call workflow_complete_stage for BUILD; the controller starts the independent prototype review automatically. Do not call workflow_dispatch.`;
   } else if (state.workflow.profile === "prototype" && stage === "PROTOTYPE_REVIEW") {
-    runbook = "Independently inspect the prototype build artifact, current source, launch instructions, and available checks. Write .workflow/reviews/prototype-review.md. If a concrete human decision is required, call workflow_request_human_review and stop. Otherwise call workflow_complete_stage for PROTOTYPE_REVIEW; the controller starts evaluation automatically. Do not call workflow_dispatch.";
+    runbook = `Independently inspect the prototype build artifact, current source, launch instructions, and available checks. Write ${root}/reviews/prototype-review.md. If a concrete human decision is required, call workflow_request_human_review and stop. Otherwise call workflow_complete_stage for PROTOTYPE_REVIEW; the controller starts evaluation automatically. Do not call workflow_dispatch.`;
   }
   return [
     `You are the dedicated worker for managed workflow stage ${stage}.`,
     `Workflow profile: ${state.workflow.profile}.`,
     `Goal: ${state.workflow.goal ?? "No goal recorded"}.`,
+    `Run artifact root: ${root}. Write every stage artifact and traceability file there; do not write to legacy fixed .workflow paths.`,
     ponytailDirective(state),
     state.import?.blocker ? `Brownfield import blocker: ${JSON.stringify(state.import.blocker)}. Repair or supply evidence for this stage; do not bypass it.` : "No brownfield import blocker is active.",
     "Read AGENTS.md, workflow state, and only the artifacts relevant to this stage.",
@@ -149,6 +169,7 @@ async function dispatchCurrentStage(client: Parameters<Plugin>[0]["client"], dir
   const state = readWorkflow(directory);
   if (state.workflow.status !== "running") throw new Error(`Cannot dispatch while workflow status is ${state.workflow.status}.`);
   const agent = workerForStage(state);
+  const model = modelForStage(state);
   const created = await client.session.create({
     query: { directory },
     body: { title: `${state.workflow.profile.toUpperCase()} - ${state.stage}` },
@@ -157,7 +178,7 @@ async function dispatchCurrentStage(client: Parameters<Plugin>[0]["client"], dir
   const prompted = await client.session.promptAsync({
     path: { id: created.data.id },
     query: { directory },
-    body: { agent, parts: [{ type: "text", text: stagePrompt(state) }] },
+    body: { agent, model, parts: [{ type: "text", text: stagePrompt(state) }] },
   });
   if (prompted.error) throw new Error(`Could not prompt workflow worker session: ${JSON.stringify(prompted.error)}`);
   const ponytail_mode = currentStageDefinition(state)?.ponytail ?? "off";

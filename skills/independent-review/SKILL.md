@@ -10,6 +10,8 @@ metadata:
 
 Review the current `review_ready` or `fix_required` task without editing product source.
 
+The active artifact root is `workflow.artifact_root` in `.workflow/state.json`; all artifact paths below are relative to it.
+
 Inspect:
 
 - Linked requirements and acceptance criteria
@@ -21,7 +23,7 @@ Inspect:
 
 Check correctness, edge cases, error paths, security/privacy risk, architecture consistency, test quality, regressions, documentation, and scope creep.
 
-Write `.workflow/reviews/<TASK-ID>.md` with findings ordered by severity, evidence, verification run, residual risk, and exactly one decision:
+Write `reviews/<TASK-ID>.md` with findings ordered by severity, evidence, verification run, residual risk, and exactly one decision:
 
 - `PASS`: requirements and acceptance criteria are met with adequate evidence. Set task `done`, clear `current_task`, unblock newly eligible tasks, and return stage to `BUILD` or `FINAL_REVIEW` when all tasks are done.
 - `FIX_REQUIRED`: actionable implementation or test defects exist. Set task `fix_required`, retain `current_task`, and return stage to `BUILD`.

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -22,7 +22,16 @@ function fixture() {
   return {
     directory,
     artifact(relativePath, content = "evidence\n") {
-      const path = join(directory, ".workflow", relativePath);
+      let root = join(directory, ".workflow");
+      if (relativePath !== "state.json") {
+        try {
+          const state = readWorkflow(directory);
+          if (state.workflow.artifact_root) root = join(root, state.workflow.artifact_root);
+        } catch {
+          // Brownfield fixtures intentionally create legacy artifacts before state exists.
+        }
+      }
+      const path = join(root, relativePath);
       mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, content, "utf8");
     },
@@ -41,11 +50,30 @@ function complete(directory, stage) {
   return completeStage(directory, { stage, summary: `${stage} verified` });
 }
 
+test("each new workflow run receives an isolated artifact directory", () => {
+  const work = fixture();
+  try {
+    const first = startWorkflow(work.directory, { profile: "full", goal: "First feature" });
+    work.artifact("requirements/feature-spec.md", "# First feature\n");
+
+    const second = startWorkflow(work.directory, { profile: "quick", goal: "Second feature", reset: true });
+    assert.notEqual(first.workflow.artifact_root, second.workflow.artifact_root);
+    assert.equal(
+      readFileSync(join(work.directory, ".workflow", first.workflow.artifact_root, "requirements", "feature-spec.md"), "utf8"),
+      "# First feature\n",
+    );
+    assert.equal(existsSync(join(work.directory, ".workflow", second.workflow.artifact_root, "requirements", "feature-spec.md")), false);
+    assert.equal(workflowStatus(work.directory).artifact_root, `.workflow/${second.workflow.artifact_root}`);
+  } finally {
+    work.cleanup();
+  }
+});
+
 test("full profile uses Open Design artifacts and both human gates", () => {
   const work = fixture();
   try {
     let state = startWorkflow(work.directory, { profile: "full", goal: "Open Design full test" });
-    assert.equal(state.schema_version, 4);
+    assert.equal(state.schema_version, 5);
     assert.equal(state.stage, "FEATURE_DEFINITION");
     assert.equal(workflowStatus(work.directory).ponytail.mode, "off");
 
@@ -88,7 +116,7 @@ test("full profile uses Open Design artifacts and both human gates", () => {
     assert.equal(workflowStatus(work.directory).ponytail.mode, "full");
 
     complete(work.directory, "BUILD");
-    assert.deepEqual(workflowStatus(work.directory).missing_artifacts, [".workflow/reviews/ponytail-review.md"]);
+    assert.deepEqual(workflowStatus(work.directory).missing_artifacts, [`${workflowStatus(work.directory).artifact_root}/reviews/ponytail-review.md`]);
     work.artifact("reviews/ponytail-review.md", "Lean already. Ship.\n");
     complete(work.directory, "TASK_REVIEW");
     work.artifact("reviews/integration.md");
@@ -114,7 +142,7 @@ test("quick profile requires Open Design Lite before planning", () => {
     work.artifact("requirements/feature-spec.md");
     complete(work.directory, "REQUIREMENT");
     assert.equal(readWorkflow(work.directory).stage, "OPEN_DESIGN_LITE");
-    assert.deepEqual(workflowStatus(work.directory).missing_artifacts, [".workflow/design/DESIGN.md"]);
+    assert.deepEqual(workflowStatus(work.directory).missing_artifacts, [`${workflowStatus(work.directory).artifact_root}/design/DESIGN.md`]);
 
     work.artifact("design/DESIGN.md");
     complete(work.directory, "OPEN_DESIGN_LITE");
@@ -179,7 +207,7 @@ test("prototype uses focused Open Design and an automatic build-review-evaluatio
     let state = complete(work.directory, "BUILD");
     assert.equal(state.stage, "PROTOTYPE_REVIEW");
     assert.equal(state.workflow.status, "running");
-    assert.deepEqual(workflowStatus(work.directory).missing_artifacts, [".workflow/reviews/prototype-review.md"]);
+    assert.deepEqual(workflowStatus(work.directory).missing_artifacts, [`${workflowStatus(work.directory).artifact_root}/reviews/prototype-review.md`]);
 
     work.artifact("reviews/prototype-review.md");
     state = complete(work.directory, "PROTOTYPE_REVIEW");
@@ -238,7 +266,7 @@ test("legacy design stage names normalize to Open Design", () => {
         stage: legacyStage,
       }));
       const state = readWorkflow(work.directory);
-      assert.equal(state.schema_version, 4);
+      assert.equal(state.schema_version, 5);
       assert.equal(state.stage, "OPEN_DESIGN");
     } finally {
       work.cleanup();

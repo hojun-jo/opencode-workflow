@@ -10,6 +10,8 @@ metadata:
 
 Run only after every task is `done` and all task reviews are `PASS`.
 
+The active artifact root is `workflow.artifact_root` in `.workflow/state.json`; all artifact paths below are relative to it.
+
 Verify:
 
 - Every requirement and acceptance criterion has implementation and test/review evidence.
@@ -19,7 +21,7 @@ Verify:
 - Documentation and traceability match shipped behavior.
 - There are no unresolved decisions, skipped tasks, uncovered requirements, or unacknowledged risks.
 
-At `INTEGRATION_REVIEW`, write `.workflow/reviews/integration.md`. At `COMPLETION_GATE`, write `.workflow/reviews/final.md`. Each artifact must record commands, results, coverage gaps, residual risks, and exactly one decision.
+At `INTEGRATION_REVIEW`, write `reviews/integration.md`. At `COMPLETION_GATE`, write `reviews/final.md`. Each artifact must record commands, results, coverage gaps, residual risks, and exactly one decision.
 
 - `PASS`: call `workflow_complete_stage` for the active stage only; the controller dispatches `COMPLETION_GATE` after an integration pass.
 - `FIX_REQUIRED`: identify affected tasks/requirements and return the work to a bounded build task.

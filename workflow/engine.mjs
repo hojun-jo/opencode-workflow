@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { getProfile, profiles } from "./profiles/index.mjs";
 
@@ -70,8 +71,20 @@ const gateFallbackStage = {
 };
 
 const timestamp = () => new Date().toISOString();
-const statePath = (directory) => join(directory, ".workflow", "state.json");
-const traceabilityPath = (directory) => join(directory, ".workflow", "traceability.json");
+const workflowRootPath = (directory) => join(directory, ".workflow");
+const statePath = (directory) => join(workflowRootPath(directory), "state.json");
+const legacyArtifactRootPath = (directory) => workflowRootPath(directory);
+
+function artifactRootPath(directory, state = null) {
+  return state?.workflow?.artifact_root
+    ? join(workflowRootPath(directory), state.workflow.artifact_root)
+    : legacyArtifactRootPath(directory);
+}
+
+function artifactReference(state, relativePath) {
+  const prefix = state?.workflow?.artifact_root ? `${state.workflow.artifact_root}/` : "";
+  return `.workflow/${prefix}${relativePath}`;
+}
 
 function defaultGates() {
   return {
@@ -83,8 +96,8 @@ function defaultGates() {
 
 function baseState() {
   return {
-    schema_version: 4,
-    workflow: { profile: "full", goal: null, status: "ready", started_at: null },
+    schema_version: 5,
+    workflow: { profile: "full", goal: null, status: "ready", started_at: null, run_id: null, artifact_root: null },
     stage: "FEATURE_DEFINITION",
     stages: {},
     import: null,
@@ -100,7 +113,7 @@ function normalizeState(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("state.json must contain a JSON object.");
 
   const state = { ...baseState(), ...value };
-  state.schema_version = 4;
+  state.schema_version = 5;
   state.workflow = { ...baseState().workflow, ...(value.workflow ?? {}) };
   state.gates = { ...defaultGates(), ...(value.gates ?? {}) };
   for (const [gate, initial] of Object.entries(defaultGates())) {
@@ -191,12 +204,22 @@ function createOrValidate(path, initialValue) {
   return "created";
 }
 
-export function initializeWorkflow(directory) {
-  const root = join(directory, ".workflow");
+function initializeArtifactDirectories(root) {
   for (const artifactDirectory of directories) mkdirSync(join(root, artifactDirectory), { recursive: true });
+}
+
+function initializeRun(directory, state) {
+  const root = artifactRootPath(directory, state);
+  initializeArtifactDirectories(root);
+  const traceability = createOrValidate(join(root, "traceability.json"), { schema_version: 1, requirements: [] });
+  return { root, traceability };
+}
+
+export function initializeWorkflow(directory) {
+  const root = workflowRootPath(directory);
+  mkdirSync(join(root, "runs"), { recursive: true });
   const stateResult = createOrValidate(statePath(directory), baseState());
-  const traceabilityResult = createOrValidate(traceabilityPath(directory), { schema_version: 1, requirements: [] });
-  return { root, state: stateResult, traceability: traceabilityResult };
+  return { root, state: stateResult, runs: "created_or_preserved" };
 }
 
 export function readWorkflow(directory) {
@@ -242,16 +265,17 @@ function artifactsFor(stage, profile) {
   return requiredArtifacts[stage] ?? [];
 }
 
-function artifactExists(directory, relativePath) {
-  const absolute = join(directory, ".workflow", relativePath);
+function artifactExists(root, relativePath) {
+  const absolute = join(root, relativePath);
   if (!existsSync(absolute)) return false;
   const stats = statSync(absolute);
   if (!relativePath.endsWith("/")) return stats.isFile() && stats.size > 0;
   return stats.isDirectory() && readdirSync(absolute).length > 0;
 }
 
-export function missingArtifacts(directory, stage, profile = "full") {
-  return artifactsFor(stage, profile).filter((relativePath) => !artifactExists(directory, relativePath));
+export function missingArtifacts(directory, stage, profile = "full", state = readWorkflow(directory)) {
+  const root = artifactRootPath(directory, state);
+  return artifactsFor(stage, profile).filter((relativePath) => !artifactExists(root, relativePath));
 }
 
 const conventionalSources = {
@@ -295,15 +319,15 @@ function sourceReferencesFor(stage, sources = []) {
     .map((entry) => entry.source.trim());
 }
 
-function markdownWarnings(directory, stage) {
+function markdownWarnings(root, stage, state) {
   const warnings = [];
-  const paths = artifactsFor(stage, "full").filter((path) => path.endsWith(".md") && artifactExists(directory, path));
+  const paths = artifactsFor(stage, "full").filter((path) => path.endsWith(".md") && artifactExists(root, path));
   for (const path of paths) {
-    const content = readFileSync(join(directory, ".workflow", path), "utf8").trim();
-    if (content.length < 40) warnings.push(`Imported artifact may be too brief for reliable validation: .workflow/${path}`);
+    const content = readFileSync(join(root, path), "utf8").trim();
+    if (content.length < 40) warnings.push(`Imported artifact may be too brief for reliable validation: ${artifactReference(state, path)}`);
   }
   if (["OPEN_DESIGN", "OPEN_DESIGN_LITE"].includes(stage)) {
-    const designPath = join(directory, ".workflow", "design", "DESIGN.md");
+    const designPath = join(root, "design", "DESIGN.md");
     if (existsSync(designPath)) {
       const design = readFileSync(designPath, "utf8").toLowerCase();
       const missingStates = ["loading", "empty", "error"].filter((state) => !design.includes(state));
@@ -311,7 +335,7 @@ function markdownWarnings(directory, stage) {
       if (!/(interaction|interaction|인터랙션|상호작용)/i.test(design)) warnings.push("Design does not explicitly describe interaction behavior.");
     }
   }
-  const tracePath = traceabilityPath(directory);
+  const tracePath = join(root, "traceability.json");
   if (["OPEN_DESIGN", "TRACEABILITY_CHECK", "TDD_PLAN"].includes(stage) && existsSync(tracePath)) {
     try {
       const traceability = JSON.parse(readFileSync(tracePath, "utf8"));
@@ -325,24 +349,25 @@ function markdownWarnings(directory, stage) {
   return warnings;
 }
 
-export function validateExistingStage(directory, stage, profile = "full", sources = []) {
+export function validateExistingStage(directory, stage, profile = "full", sources = [], state = null) {
+  const root = artifactRootPath(directory, state);
   const required = artifactsFor(stage, profile);
-  const present = required.filter((path) => artifactExists(directory, path));
-  const missing = required.filter((path) => !artifactExists(directory, path));
+  const present = required.filter((path) => artifactExists(root, path));
+  const missing = required.filter((path) => !artifactExists(root, path));
   const registered = sourceReferencesFor(stage, sources);
   const conventional = detectConventionalSources(directory, stage);
-  const source = [...present.map((path) => `.workflow/${path}`), ...new Set([...registered, ...conventional])];
+  const source = [...present.map((path) => artifactReference(state, path)), ...new Set([...registered, ...conventional])];
   const sourceChecks = source
     .filter((item) => !item.startsWith(".workflow/"))
     .map((item) => ({ source: item, ...usableSource(directory, item) }));
   const usableAlternatives = sourceChecks.filter((item) => item.valid);
   const warnings = [
-    ...markdownWarnings(directory, stage),
+    ...markdownWarnings(root, stage, state),
     ...sourceChecks.map((item) => item.warning).filter(Boolean),
   ];
 
   if (["TRACEABILITY_CHECK", "TDD_PLAN", "IMPLEMENTATION_REVIEW"].includes(stage)) {
-    const tracePath = traceabilityPath(directory);
+    const tracePath = join(root, "traceability.json");
     let traceabilityValid = false;
     if (existsSync(tracePath)) {
       try {
@@ -357,7 +382,7 @@ export function validateExistingStage(directory, stage, profile = "full", source
         status: "BLOCKED",
         source,
         present,
-        missing: [".workflow/traceability.json with at least one requirement mapping"],
+        missing: [`${artifactReference(state, "traceability.json")} with at least one requirement mapping`],
         warnings,
       };
     }
@@ -367,7 +392,7 @@ export function validateExistingStage(directory, stage, profile = "full", source
     return { status: "BLOCKED", source, present, missing, warnings };
   }
   if (missing.length) {
-    warnings.push(`External or conventional source substitutes for missing managed artifacts: ${missing.map((path) => `.workflow/${path}`).join(", ")}`);
+    warnings.push(`External or conventional source substitutes for missing managed artifacts: ${missing.map((path) => artifactReference(state, path)).join(", ")}`);
   }
   return {
     status: warnings.length ? "IMPORT_WITH_WARNINGS" : "VALID",
@@ -402,8 +427,8 @@ function implementationFiles(directory) {
   return files;
 }
 
-function requirementIds(directory, sources = []) {
-  const candidates = [join(directory, ".workflow", "requirements", "feature-spec.md")];
+function requirementIds(directory, sources = [], state = null) {
+  const candidates = [join(artifactRootPath(directory, state), "requirements", "feature-spec.md")];
   for (const stage of ["FEATURE_DEFINITION", "REQUIREMENT", "GOAL"]) {
     for (const source of [...detectConventionalSources(directory, stage), ...sourceReferencesFor(stage, sources)]) {
       if (!/^https?:\/\//i.test(source)) candidates.push(resolve(directory, source));
@@ -417,9 +442,9 @@ function requirementIds(directory, sources = []) {
   return [...ids].sort();
 }
 
-export function analyzeExistingImplementation(directory, sources = []) {
+export function analyzeExistingImplementation(directory, sources = [], state = null) {
   const files = implementationFiles(directory);
-  const requirements = requirementIds(directory, sources);
+  const requirements = requirementIds(directory, sources, state);
   const coverage = requirements.map((id) => {
     const matches = [];
     const tests = [];
@@ -538,9 +563,18 @@ export function startWorkflow(directory, {
   const requestedStage = startAliases[profile][selectedFrom];
   const requestedIndex = definition.stages.findIndex((stage) => stage.id === requestedStage);
   const state = baseState();
-  state.workflow = { profile, goal: goal.trim(), status: "running", started_at: timestamp() };
+  const runId = `${timestamp().replace(/[-:.]/g, "").replace("Z", "")}-${randomUUID().slice(0, 8)}`;
+  state.workflow = {
+    profile,
+    goal: goal.trim(),
+    status: "running",
+    started_at: timestamp(),
+    run_id: runId,
+    artifact_root: `runs/${runId}`,
+  };
   state.stage = requestedStage;
   state.stages = stageRecords(profile);
+  initializeRun(directory, state);
 
   const importWarnings = [];
   let blocker = null;
@@ -599,7 +633,7 @@ export function startWorkflow(directory, {
   const targetNeedsCoverage = ["planning", "build", "review"].includes(selectedFrom);
   if (targetNeedsCoverage) {
     state.implementation_analysis = inspection.implementation;
-    writeJson(join(directory, ".workflow", "reviews", "implementation-coverage.json"), inspection.implementation);
+    writeJson(join(artifactRootPath(directory, state), "reviews", "implementation-coverage.json"), inspection.implementation);
   }
   const importStatus = blocker
     ? "BLOCKED"
@@ -628,13 +662,13 @@ export function startWorkflow(directory, {
   return state;
 }
 
-function assertArtifacts(directory, stage, profile) {
-  const missing = missingArtifacts(directory, stage, profile);
-  if (missing.length) throw new Error(`Cannot complete ${stage}; missing required artifacts: ${missing.map((path) => `.workflow/${path}`).join(", ")}.`);
+function assertArtifacts(directory, stage, profile, state) {
+  const missing = missingArtifacts(directory, stage, profile, state);
+  if (missing.length) throw new Error(`Cannot complete ${stage}; missing required artifacts: ${missing.map((path) => artifactReference(state, path)).join(", ")}.`);
 }
 
-function readTasks(directory) {
-  const path = join(directory, ".workflow", "tasks", "tasks.json");
+function readTasks(directory, state) {
+  const path = join(artifactRootPath(directory, state), "tasks", "tasks.json");
   if (!existsSync(path)) return [];
   try {
     const value = JSON.parse(readFileSync(path, "utf8"));
@@ -644,13 +678,13 @@ function readTasks(directory) {
   }
 }
 
-function allTasksDone(directory) {
-  const tasks = readTasks(directory);
+function allTasksDone(directory, state) {
+  const tasks = readTasks(directory, state);
   return tasks.length > 0 && tasks.every((task) => task?.status === "done" && task?.review === "PASS");
 }
 
-function hasHumanRequiredTask(directory) {
-  return readTasks(directory).some((task) => task?.status === "human_required" || task?.review === "HUMAN_REQUIRED");
+function hasHumanRequiredTask(directory, state) {
+  return readTasks(directory, state).some((task) => task?.status === "human_required" || task?.review === "HUMAN_REQUIRED");
 }
 
 export function completeStage(directory, { stage, summary = "" }) {
@@ -660,14 +694,14 @@ export function completeStage(directory, { stage, summary = "" }) {
   if (stage !== state.stage) throw new Error(`Cannot complete ${stage}; current stage is ${state.stage}.`);
   if (currentStageDefinition(state)?.gate) throw new Error(`${stage} is a human gate. Use workflow_approve or workflow_reject.`);
   if (state.stage === "TASK_REVIEW") {
-    if (hasHumanRequiredTask(directory)) {
+    if (hasHumanRequiredTask(directory, state)) {
       state.workflow.status = "waiting_human";
       state.stages[state.stage] = { ...state.stages[state.stage], status: "PENDING" };
       appendHistory(state, "human_review_required", { summary });
       saveWorkflow(directory, state);
       return state;
     }
-    if (allTasksDone(directory)) {
+    if (allTasksDone(directory, state)) {
       // Continue through artifact validation and transition to FINAL_REVIEW below.
     } else {
       state.stages[state.stage] = {
@@ -683,7 +717,7 @@ export function completeStage(directory, { stage, summary = "" }) {
       return state;
     }
   }
-  assertArtifacts(directory, stage, state.workflow.profile);
+  assertArtifacts(directory, stage, state.workflow.profile, state);
 
   const next = nextStage(state);
   if (!next) throw new Error(`No next stage is defined after ${stage}.`);
@@ -731,7 +765,7 @@ export function approveGate(directory, { gate }) {
     }
     state.stages[importedEvidenceStage] = { ...importedEvidence, validation, source: validation.source };
   } else {
-    assertArtifacts(directory, state.stage, state.workflow.profile);
+    assertArtifacts(directory, state.stage, state.workflow.profile, state);
   }
   state.gates[gate] = { status: "approved", approved_at: timestamp(), approval: "APPROVED_BY_USER" };
   state.stages[state.stage] = {
@@ -832,7 +866,7 @@ export function recordDispatch(directory, { session_id, agent, stage, ponytail_m
 
 export function workflowStatus(directory) {
   const state = readWorkflow(directory);
-  const missing = missingArtifacts(directory, state.stage, state.workflow.profile);
+  const missing = missingArtifacts(directory, state.stage, state.workflow.profile, state);
   const current = currentStageDefinition(state);
   const gate = current?.gate ?? null;
   const humanReviewReason = state.workflow.status === "waiting_human" && !gate
@@ -841,6 +875,7 @@ export function workflowStatus(directory) {
   return {
     profile: state.workflow.profile,
     goal: state.workflow.goal,
+    run_id: state.workflow.run_id,
     status: state.workflow.status,
     stage: state.stage,
     current_task: state.current_task,
@@ -855,7 +890,8 @@ export function workflowStatus(directory) {
     },
     waiting_for_gate: state.workflow.status === "waiting_human" ? gate ?? "HUMAN_REVIEW" : null,
     human_review_reason: humanReviewReason,
-    missing_artifacts: missing.map((path) => `.workflow/${path}`),
+    artifact_root: artifactReference(state, "").replace(/\/$/, ""),
+    missing_artifacts: missing.map((path) => artifactReference(state, path)),
     next_stage: state.workflow.status === "waiting_human" ? null : nextStage(state)?.id ?? null,
   };
 }

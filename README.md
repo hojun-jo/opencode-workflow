@@ -165,17 +165,19 @@ Software / App workflow를 초기화하면 프로젝트에 다음 구조가 생�
 
 ```text
 .workflow/
-├── state.json                    # controller가 관리하는 현재 상태
-├── traceability.json             # 요구사항 ↔ task ↔ test 추적성
-├── requirements/                 # feature spec, bug report 등
-├── design/                       # DESIGN.md, user flow, wireframe, screen
-├── architecture/                # architecture와 ADR, bug 원인/영향 범위
-├── tasks/                        # tasks.json, TDD plan, regression tests
-├── prototypes/                   # prototype 제약, build, 평가, 결정
-└── reviews/                      # task, regression, integration, final 검토
+├── state.json                    # controller가 관리하는 현재 run 포인터
+└── runs/
+    └── <run-id>/                 # 기능 또는 bugfix/prototype 단위 산출물
+        ├── traceability.json     # 요구사항 ↔ task ↔ test 추적성
+        ├── requirements/         # feature spec, bug report 등
+        ├── design/               # DESIGN.md, user flow, wireframe, screen
+        ├── architecture/         # architecture와 ADR, bug 원인/영향 범위
+        ├── tasks/                # tasks.json, TDD plan, regression tests
+        ├── prototypes/           # prototype 제약, build, 평가, 결정
+        └── reviews/              # task, regression, integration, final 검토
 ```
 
-worker는 자신의 stage에 허용된 workflow artifact만 수정합니다. 제품 소스와 테스트 수정은 승인된 구현 단계 이후에만 허용됩니다.
+새 workflow를 시작하면 고유한 `run-id`가 생성되어 이전 기능의 산출물을 덮어쓰지 않습니다. worker는 `.workflow/state.json`의 `workflow.artifact_root`가 가리키는 현재 run 안에서만 자신의 stage artifact를 수정합니다. 제품 소스와 테스트 수정은 승인된 구현 단계 이후에만 허용됩니다.
 
 Game family를 초기화하면 프로젝트에 `.opencode/` 기반 OGS agent, skill, rule, 문서가 설치되고 `.opencode/workflow-family.json`에 선택한 family와 engine이 기록됩니다.
 

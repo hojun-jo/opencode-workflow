@@ -10,7 +10,9 @@ metadata:
 
 Run only when `gates.product_design.status` is `approved`.
 
-Read the approved specification, Open Design artifacts, project rules, and relevant existing code. Architecture must consume the resolved screen structure and interaction/state definitions instead of guessing product behavior. Create `.workflow/architecture/architecture.md` covering:
+The active artifact root is `workflow.artifact_root` in `.workflow/state.json` (for example, `.workflow/runs/<run-id>`). All artifact paths below are relative to that root.
+
+Read the approved specification, Open Design artifacts, project rules, and relevant existing code. Architecture must consume the resolved screen structure and interaction/state definitions instead of guessing product behavior. Create `architecture/architecture.md` covering:
 
 - Current-system constraints and proposed module boundaries
 - State and data flow
@@ -21,6 +23,6 @@ Read the approved specification, Open Design artifacts, project rules, and relev
 - Testing strategy by layer
 - Rollout, compatibility, and rollback risks
 
-Reference requirement IDs throughout. Record consequential, hard-to-reverse choices in `.workflow/architecture/decisions/ADR-NNN-title.md` with context, decision, alternatives, consequences, and status.
+Reference requirement IDs throughout. Record consequential, hard-to-reverse choices in `architecture/decisions/ADR-NNN-title.md` with context, decision, alternatives, consequences, and status.
 
 Do not modify product source or workflow state. Update architecture links in traceability, then call `workflow_complete_stage` for `ARCHITECTURE`.

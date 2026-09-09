@@ -10,15 +10,17 @@ metadata:
 
 Use this skill for the workflow's feature-definition and initial-user-flow stages. Complete only the active stage; the controller dispatches the following Open Design stage.
 
+The active artifact root is `workflow.artifact_root` in `.workflow/state.json` (for example, `.workflow/runs/<run-id>`). Write all feature artifacts there, not to legacy fixed `.workflow/` paths.
+
 ## Inputs
 
 - User goal, constraints, and requested changes
 - Existing project behavior and project `AGENTS.md`
-- Existing `.workflow/` artifacts, if present
+- Existing artifacts in the active run, if present
 
 ## Required outputs
 
-At `FEATURE_DEFINITION`, create or update `.workflow/requirements/feature-spec.md` and initialize applicable traceability. At `USER_FLOW`, create or update `.workflow/design/user-flow.md` and extend traceability for the flow.
+At `FEATURE_DEFINITION`, create or update `requirements/feature-spec.md` and initialize applicable traceability. At `USER_FLOW`, create or update `design/user-flow.md` and extend traceability for the flow.
 
 ## Feature specification
 
